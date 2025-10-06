@@ -214,9 +214,11 @@ end note
 
 [*Портал поддержки*](https://github.com/Ondrya/architecture-warmhouse/blob/main/images/modern_support.png)
 
+[*Сервис телеметрии*](https://github.com/Ondrya/architecture-warmhouse/blob/main/images/modern_telemetry.png)
+
 **Диаграмма кода (Code)**
 
-Добавьте одну диаграмму или несколько.
+[*Приём телеметрии MQTT*](https://github.com/Ondrya/architecture-warmhouse/blob/main/images/modern_code_income_telemetry.png)
 
 # Задание 3. Разработка ER-диаграммы
 
