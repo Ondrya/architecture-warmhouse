@@ -197,7 +197,143 @@ end note
 
 **Диаграмма компонентов (Components)**
 
-Добавьте диаграмму для каждого из выделенных микросервисов.
+Перечислим сервисы:
+
+- Сервис аутентификации
+- Управление устройствами
+- Сервис автоматизации
+- Портал поддержки
+- Сервис телеметрии
+
+*Сервис аутентификации*
+Не будем подробно расписывать эту диаграмму, остановимся на том, что есть JWT, реализацию можно взять готовую, например KeyCloak - есть поддержка для embeded устройств
+
+[*Управление устройствами*](https://github.com/Ondrya/architecture-warmhouse/blob/main/images/modern_device_control.png)
+
+```
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+title Сервис «Управление устройствами» — Component Diagram (C3)
+
+Person(user, "Конечный пользователь")
+
+Container(smart_home_web, "Веб-приложение", "SPA", "Frontend для управления устройствами")
+Container(smart_home_mobile, "Мобильное приложение", "iOS/Android", "Мобильный клиент")
+
+Container_Boundary(device_management, "Сервис управления устройствами") {
+  Component(device_api, "Device API Controller", "REST/HTTP", "Обрабатывает входящие запросы от клиентов")
+  Component(device_registry, "Реестр устройств", "Domain Service", "Хранит и управляет метаданными устройств")
+  Component(protocol_adapter, "Адаптер протоколов", "Integration Layer", "Поддержка MQTT, HTTP, CoAP для связи с устройствами")
+  Component(device_commander, "Исполнитель команд", "Command Service", "Отправляет команды (вкл/выкл, запереть и т.д.)")
+  Component(event_publisher, "Публикатор событий", "Event Publisher", "Отправляет события в Message Broker")
+  Component(device_validator, "Валидатор устройств", "Security/Validation", "Проверяет подлинность и совместимость устройств")
+}
+
+Container(support_portal, "Портал поддержки", "Internal Web App", "Используется командой поддержки")
+
+ContainerDb(main_db, "Основная БД", "PostgreSQL", "Хранение: пользователи, устройства, привязки")
+ContainerQueue(message_broker, "Message Broker", "Kafka / MQTT", "Обмен событиями с другими сервисами и устройствами")
+
+System_Ext(partner_devices, "Партнёрские устройства", "IoT-устройства", "Термостаты, замки, датчики и т.д.")
+
+' Внешние вызовы к сервису
+Rel(smart_home_web, device_api, "GET /devices, POST /commands", "HTTPS")
+Rel(smart_home_mobile, device_api, "GET /devices, POST /commands", "HTTPS")
+Rel(support_portal, device_api, "Диагностика устройств", "Internal HTTPS")
+
+' Внутренние зависимости компонентов
+Rel(device_api, device_registry, "Запрашивает/обновляет данные", "In-Memory Call")
+Rel(device_api, device_validator, "Валидация при добавлении", "In-Memory Call")
+Rel(device_api, device_commander, "Инициирует команду", "In-Memory Call")
+
+Rel(device_registry, main_db, "Читает/пишет", "JDBC")
+Rel(device_validator, main_db, "Проверяет совместимость", "JDBC")
+
+Rel(device_commander, protocol_adapter, "Формирует команду", "In-Memory Call")
+Rel(protocol_adapter, partner_devices, "Отправляет команду", "MQTT / HTTP")
+
+Rel(device_registry, event_publisher, "Публикует изменения", "In-Memory Call")
+Rel(event_publisher, message_broker, "Публикует событие", "Kafka/MQTT")
+
+Rel(partner_devices, protocol_adapter, "Отправляют телеметрию", "MQTT / HTTP")
+Rel(protocol_adapter, device_registry, "Обновляет статус устройства", "In-Memory Call")
+
+' Примечание
+note right of device_management
+  Сервис поддерживает:
+  - Регистрацию новых устройств
+  - Отправку команд (on/off, lock/unlock)
+  - Синхронизацию состояния
+  - Совместимость с партнёрскими устройствами
+  по открытым протоколам.
+end note
+
+@enduml
+```
+
+[*Сервис автоматизации*](https://github.com/Ondrya/architecture-warmhouse/blob/main/images/modern_rules.png)
+
+```plantuml
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+title Сервис автоматизации — Component Diagram (C3)
+
+Person(user, "Конечный пользователь")
+
+Container(smart_home_web, "Веб-приложение", "SPA", "Создание и редактирование сценариев")
+Container(smart_home_mobile, "Мобильное приложение", "iOS/Android", "Управление правилами на ходу")
+
+Container_Boundary(automation_engine, "Сервис автоматизации") {
+  Component(rule_api, "Rule API Controller", "REST/HTTP", "Приём и управление правилами от пользователей")
+  Component(rule_repository, "Хранилище правил", "Domain Service", "Хранит и управляет пользовательскими сценариями")
+  Component(event_listener, "Слушатель событий", "Event Consumer", "Подписывается на события от устройств и других сервисов")
+  Component(rule_evaluator, "Оценщик правил", "Rule Engine", "Сопоставляет события с условиями правил")
+  Component(action_executor, "Исполнитель действий", "Command Dispatcher", "Отправляет команды в Device Management или другие сервисы")
+  Component(scheduler, "Планировщик", "Time-based Trigger", "Обрабатывает отложенные и расписания (например, 'в 19:00 включить свет')")
+}
+
+Container(device_management, "Сервис управления устройствами", "Microservice", "Отправка команд устройствам")
+Container(telemetry_service, "Сервис телеметрии", "Microservice", "Источник данных о состоянии устройств")
+
+ContainerDb(main_db, "Основная БД", "PostgreSQL", "Хранение правил, расписаний, метаданных")
+ContainerQueue(message_broker, "Message Broker", "Kafka / MQTT", "Поток событий от устройств и сервисов")
+
+' Внешние вызовы к сервису
+Rel(smart_home_web, rule_api, "Создать/редактировать правило", "HTTPS")
+Rel(smart_home_mobile, rule_api, "Управлять сценариями", "HTTPS")
+
+' Внутренние зависимости
+Rel(rule_api, rule_repository, "Сохраняет/извлекает правила", "In-Memory Call")
+Rel(rule_repository, main_db, "Читает/пишет", "JDBC")
+
+Rel(event_listener, message_broker, "Подписывается на события", "Kafka Consumer")
+Rel(event_listener, rule_evaluator, "Передаёт событие", "In-Memory Call")
+
+Rel(scheduler, rule_repository, "Загружает расписания", "In-Memory Call")
+Rel(scheduler, rule_evaluator, "Триггер по времени", "In-Memory Call")
+
+Rel(rule_evaluator, rule_repository, "Получает активные правила", "In-Memory Call")
+Rel(rule_evaluator, action_executor, "Выполняет действие при совпадении", "In-Memory Call")
+
+Rel(action_executor, device_management, "Отправляет команду", "HTTP / gRPC")
+Rel(action_executor, telemetry_service, "Запрашивает состояние (опционально)", "HTTP")
+
+' Примечание
+note right of automation_engine
+  Поддерживаемые типы правил:
+  - Событийные: "Если дверь открыта → включить свет"
+  - Условные: "Если температура < 18°C → включить отопление"
+  - Расписания: "Каждый будний день в 07:00 → открыть жалюзи"
+  
+  Все правила привязаны к аккаунту пользователя.
+end note
+
+@enduml
+```
+
+
 
 **Диаграмма кода (Code)**
 
