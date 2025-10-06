@@ -70,10 +70,7 @@ Domain: Управление температурой
 
 ### 5. Визуализация контекста системы — диаграмма С4
 
-```markdown
 [с4](https://github.com/Ondrya/architecture-warmhouse/blob/main/images/c4-mono.png)
-```
-
 
 ```
 @startuml
