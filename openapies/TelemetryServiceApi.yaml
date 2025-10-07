@@ -1,0 +1,319 @@
+openapi: 3.0.3
+info:
+  title: Telemetry Service API
+  version: 1.0.0
+  description: |
+    API для приёма и запроса телеметрии с устройств умного дома
+    <br> — Приём телеметрии от устройств по HTTP
+    <br> — (MQTT обрабатывается вне HTTP API, поэтому в OpenAPI не включён)
+
+servers:
+  - url: https://api.smarthome.example/telemetry/v1
+
+security:
+  - DeviceAuth: []     # Для устройств
+  - UserBearerAuth: [] # Для пользователей и внутренних сервисов
+
+tags:
+  - name: Ingestion
+    description: Приём телеметрии от устройств (требуется аутентификация устройства)
+  - name: Queries
+    description: Запрос данных — для пользователей, фронтендов и поддержки
+  - name: Diagnostics
+    description: Диагностические эндпоинты для внутреннего использования
+
+paths:
+  /ingest:
+    post:
+      tags:
+        - Ingestion
+      summary: Отправить телеметрию от устройства
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelemetryPayload'
+      responses:
+        '202':
+          description: Данные приняты
+        '400':
+          description: Некорректный формат
+        '401':
+          description: Неавторизованное устройство
+      security:
+        - DeviceAuth: []
+
+  /devices/{deviceId}/latest:
+    get:
+      tags:
+        - Queries
+      summary: Получить последние показания по устройству
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Последние данные
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LatestTelemetry'
+        '404':
+          description: Устройство не найдено или данных нет
+      security:
+        - UserBearerAuth: []
+
+  /devices/{deviceId}/raw:
+    get:
+      tags:
+        - Queries
+      summary: Получить сырую телеметрию за период
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 1000
+            maximum: 10000
+      responses:
+        '200':
+          description: Список записей
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RawTelemetryPoint'
+        '400':
+          description: Некорректный диапазон дат
+      security:
+        - UserBearerAuth: []
+
+  /devices/{deviceId}/aggregates:
+    get:
+      tags:
+        - Queries
+      summary: Получить агрегированные данные (среднее, мин/макс)
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: metric
+          in: query
+          required: true
+          schema:
+            type: string
+            example: temperature
+        - name: period
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [hourly, daily, weekly]
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Агрегированные данные
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AggregateTelemetry'
+      security:
+        - UserBearerAuth: []
+
+  /events/search:
+    get:
+      tags:
+        - Diagnostics
+      summary: Поиск событий по устройству и типу (для поддержки и автоматизации)
+      parameters:
+        - name: deviceId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: eventType
+          in: query
+          required: false
+          schema:
+            type: string
+            example: motion_detected
+        - name: since
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 100
+      responses:
+        '200':
+          description: Список событий
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TelemetryEvent'
+      security:
+        - UserBearerAuth: []
+
+components:
+  securitySchemes:
+    DeviceAuth:
+      type: apiKey
+      in: header
+      name: X-Device-Token
+      description: Токен устройства, выданный при регистрации
+
+    UserBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT токен пользователя или внутреннего сервиса
+
+  schemas:
+    TelemetryPayload:
+      type: object
+      required: [deviceId, timestamp, data]
+      properties:
+        deviceId:
+          type: string
+          description: Идентификатор устройства в системе
+        timestamp:
+          type: string
+          format: date-time
+        data:
+          type: object
+          additionalProperties:
+            oneOf:
+              - type: number
+              - type: boolean
+              - type: string
+          example:
+            temperature: 22.5
+            humidity: 45
+            motion: false
+
+    LatestTelemetry:
+      type: object
+      properties:
+        deviceId:
+          type: string
+          format: uuid
+        receivedAt:
+          type: string
+          format: date-time
+        metrics:
+          type: object
+          additionalProperties:
+            type: number
+        events:
+          type: array
+          items:
+            type: string
+
+    RawTelemetryPoint:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        deviceId:
+          type: string
+          format: uuid
+        metricName:
+          type: string
+        metricValue:
+          type: number
+        eventType:
+          type: string
+          nullable: true
+        recordedAt:
+          type: string
+          format: date-time
+        receivedAt:
+          type: string
+          format: date-time
+
+    AggregateTelemetry:
+      type: object
+      properties:
+        deviceId:
+          type: string
+          format: uuid
+        metricName:
+          type: string
+        period:
+          type: string
+          enum: [hourly, daily, weekly]
+        periodStart:
+          type: string
+          format: date-time
+        avgValue:
+          type: number
+        minValue:
+          type: number
+        maxValue:
+          type: number
+        count:
+          type: integer
+
+    TelemetryEvent:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        deviceId:
+          type: string
+          format: uuid
+        eventType:
+          type: string
+        payload:
+          type: object
