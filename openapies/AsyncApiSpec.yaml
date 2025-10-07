@@ -1,0 +1,284 @@
+# Версия спецификации AsyncAPI
+asyncapi: 2.6.0
+
+# Метаданные API
+info:
+  title: Smart Home Event Streaming API
+  version: 1.0.0
+  description: Асинхронные события между микросервисами и IoT-устройствами в экосистеме умного дома
+
+# Серверы (брокеры сообщений)
+servers:
+  # Внутренний Kafka-кластер для микросервисов.
+  # Используется порт 9092 — стандартный порт Kafka для клиентских подключений (PLAINTEXT).
+  # В продакшене рекомендуется использовать 9093 (SSL) или SASL-аутентификацию.
+  internal-kafka:
+    url: kafka.smarthome.internal:9092
+    protocol: kafka
+    description: Внутренний Kafka-кластер для надёжного обмена событиями между микросервисами
+
+  # MQTT-брокер для подключения IoT-устройств.
+  # Порт 1883 — стандартный незашифрованный порт MQTT.
+  # Для устройств с поддержкой TLS можно использовать 8883 (но многие IoT-устройства его не поддерживают).
+  iot-mqtt:
+    url: mqtt.smarthome.example:1883
+    protocol: mqtt
+    description: MQTT-брокер для лёгковесного взаимодействия с IoT-устройствами
+
+# Каналы (topics в Kafka, topics в MQTT)
+channels:
+  # Канал телеметрии от устройств.
+  # Формат: telemetry/{userId}/{deviceId} — позволяет шардировать по пользователю и устройству.
+  # Используется MQTT, так как устройства часто работают в сетях с ограничениями.
+  telemetry/{userId}/{deviceId}:
+    description: Сырая телеметрия (температура, влажность, статус) от устройства
+    servers:
+      - iot-mqtt  # Только MQTT
+    subscribe:
+      summary: Устройство публикует телеметрию
+      message:
+        $ref: '#/components/messages/TelemetryMessage'
+
+  # Канал команд для устройств.
+  # Устройство подписывается на свой топик и ждёт команд.
+  device/{userId}/{deviceId}/command:
+    description: Управляющие команды, отправляемые устройству (вкл/выкл, открыть и т.д.)
+    servers:
+      - iot-mqtt
+    publish:
+      summary: Система (Device Management) отправляет команду
+      message:
+        $ref: '#/components/messages/DeviceCommandMessage'
+
+  # Событие изменения статуса устройства (online/offline).
+  # Публикуется Device Management в Kafka — надёжная доставка для всех потребителей.
+  device.status.changed:
+    description: Событие изменения статуса подключения устройства
+    servers:
+      - internal-kafka
+    publish:
+      summary: Device Management публикует статус
+      message:
+        $ref: '#/components/messages/DeviceStatusChanged'
+
+  # Событие успешного приёма телеметрии.
+  # Публикуется Telemetry Service после валидации и сохранения данных.
+  telemetry.raw.ingested:
+    description: Сырая телеметрия принята и сохранена в Time-Series БД
+    servers:
+      - internal-kafka
+    publish:
+      summary: Telemetry Service уведомляет о приёме данных
+      message:
+        $ref: '#/components/messages/TelemetryIngested'
+
+  # Семантическое событие от датчика (например, "движение обнаружено").
+  # Преобразуется из сырых данных Telemetry Service.
+  sensor.event:
+    description: Событие высокого уровня от датчика (движение, открытие двери)
+    servers:
+      - internal-kafka
+    publish:
+      summary: Telemetry Service публикует интерпретированное событие
+      message:
+        $ref: '#/components/messages/SensorEvent'
+
+  # Срабатывание правила автоматизации.
+  # Публикуется Automation Engine для аудита и диагностики.
+  automation.rule.triggered:
+    description: Правило автоматизации было выполнено
+    servers:
+      - internal-kafka
+    publish:
+      summary: Automation Engine фиксирует срабатывание
+      message:
+        $ref: '#/components/messages/RuleTriggered'
+
+  # Инициация команды устройству (до отправки в MQTT).
+  # Позволяет логировать все команды централизованно.
+  device.command.issued:
+    description: Команда инициирована (например, из правила автоматизации)
+    servers:
+      - internal-kafka
+    publish:
+      summary: Источник команды (Automation, Support) уведомляет систему
+      message:
+        $ref: '#/components/messages/DeviceCommandIssued'
+
+# Компоненты — переиспользуемые сущности
+components:
+  messages:
+    # Сырая телеметрия от устройства
+    TelemetryMessage:
+      name: TelemetryMessage
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/TelemetryPayload'
+
+    # Команда, отправляемая устройству через MQTT
+    DeviceCommandMessage:
+      name: DeviceCommandMessage
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/DeviceCommand'
+
+    # Событие изменения статуса (online/offline)
+    DeviceStatusChanged:
+      name: DeviceStatusChanged
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/DeviceStatusEvent'
+
+    # Подтверждение приёма телеметрии
+    TelemetryIngested:
+      name: TelemetryIngested
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/TelemetryIngestedEvent'
+
+    # Семантическое событие датчика
+    SensorEvent:
+      name: SensorEvent
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/SensorEventPayload'
+
+    # Факт срабатывания правила
+    RuleTriggered:
+      name: RuleTriggered
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/RuleTriggeredEvent'
+
+    # Инициация команды (до отправки)
+    DeviceCommandIssued:
+      name: DeviceCommandIssued
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/DeviceCommandIssuedEvent'
+
+  schemas:
+    # Сырые данные от устройства
+    TelemetryPayload:
+      type: object
+      properties:
+        deviceId:
+          type: string
+          description: Идентификатор устройства в системе
+        timestamp:
+          type: string
+          format: date-time
+          description: Время генерации данных на устройстве
+        data:
+          type: object
+          additionalProperties:
+            oneOf:
+              - type: number
+              - type: boolean
+              - type: string
+          description: 'Произвольные метрики (температура: 22.5, motion: true и т.д.)'
+      required: [deviceId, timestamp, data]
+
+    # Команда устройству
+    DeviceCommand:
+      type: object
+      properties:
+        command:
+          type: string
+          description: Тип команды (turn_on, open, set_temperature)
+        params:
+          type: object
+          description: 'Дополнительные параметры (например, {temperature: 22})'
+      required: [command]
+
+    # Событие статуса устройства
+    DeviceStatusEvent:
+      type: object
+      properties:
+        deviceId:
+          type: string
+        userId:
+          type: string
+        status:
+          type: string
+          enum: [online, offline, error]
+        timestamp:
+          type: string
+          format: date-time
+      required: [deviceId, userId, status, timestamp]
+
+    # Подтверждение приёма телеметрии
+    TelemetryIngestedEvent:
+      type: object
+      properties:
+        deviceId:
+          type: string
+        userId:
+          type: string
+        metricCount:
+          type: integer
+          description: Количество метрик в пакете
+        receivedAt:
+          type: string
+          format: date-time
+      required: [deviceId, userId, receivedAt]
+
+    # Событие датчика высокого уровня
+    SensorEventPayload:
+      type: object
+      properties:
+        deviceId:
+          type: string
+        userId:
+          type: string
+        eventType:
+          type: string
+          description: Семантический тип (door_opened, motion_detected)
+        payload:
+          type: object
+          description: Дополнительные данные события
+        timestamp:
+          type: string
+          format: date-time
+      required: [deviceId, userId, eventType, timestamp]
+
+    # Срабатывание правила
+    RuleTriggeredEvent:
+      type: object
+      properties:
+        ruleId:
+          type: string
+        userId:
+          type: string
+        triggerType:
+          type: string
+          enum: [event, schedule, condition]
+        triggeredAt:
+          type: string
+          format: date-time
+        action:
+          type: object
+          description: Какое действие было выполнено
+      required: [ruleId, userId, triggeredAt]
+
+    # Инициация команды
+    DeviceCommandIssuedEvent:
+      type: object
+      properties:
+        commandId:
+          type: string
+          description: Уникальный ID команды для трассировки
+        deviceId:
+          type: string
+        userId:
+          type: string
+        command:
+          type: string
+        issuedAt:
+          type: string
+          format: date-time
+        source:
+          type: string
+          enum: [automation, support, user]
+          description: Кто инициировал команду
+      required: [commandId, deviceId, userId, command, issuedAt, source]
