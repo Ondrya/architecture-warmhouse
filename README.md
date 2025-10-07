@@ -126,6 +126,16 @@ Domain: Управление температурой
 
 Здесь приложите ссылки на документацию API для микросервисов, которые вы спроектировали в первой части проектной работы. Для документирования используйте Swagger/OpenAPI или AsyncAPI.
 
+[Управление устройствами](./openapies/DeviceManagementApi.yaml)
+
+[Сервис автоматизации](./openapies/AutomationEngineApi.yaml)
+
+[Портал поддержки](./openapies/SupportPortalApi.yaml)
+
+[Сервис телеметрии](./openapies/TelemetryServiceApi.yaml)
+
+[Async Api - все взаимодействия с шиной](./openapies/AsyncApiSpec.yaml)
+
 # Задание 5. Работа с docker и docker-compose
 
 Перейдите в apps.
