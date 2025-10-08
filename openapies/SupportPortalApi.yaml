@@ -1,0 +1,484 @@
+openapi: 3.0.3
+info:
+  title: Support Portal API
+  version: 1.0.0
+  description: Внутренний API для агентов технической поддержки
+
+servers:
+  - url: https://api.smarthome.example/support/v1
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: Users
+    description: Поиск пользователей и получение их контекста
+  - name: Devices
+    description: Инспекция устройств — статус, события, диагностика
+  - name: Logs
+    description: Поиск и фильтрация системных логов
+  - name: Tickets
+    description: Управление обращениями (тикетами) и перепиской
+  - name: Communications
+    description: Отправка уведомлений пользователям
+
+paths:
+  /users/search:
+    get:
+      tags:
+        - Users
+      summary: Найти пользователя по email или ID
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+            example: user@example.com
+      responses:
+        '200':
+          description: Пользователь найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '404':
+          description: Пользователь не найден
+
+  /users/{userId}/context:
+    get:
+      tags:
+        - Users
+      summary: Получить полный контекст пользователя (устройства, сценарии)
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Контекст пользователя
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserContext'
+
+  /devices/{deviceId}/status:
+    get:
+      tags:
+        - Devices
+      summary: Получить текущий статус устройства
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Статус устройства
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceStatus'
+
+  /devices/{deviceId}/events:
+    get:
+      tags:
+        - Devices
+      summary: Получить историю событий устройства (последние 24 ч)
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Список событий
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DeviceEvent'
+
+  /logs:
+    get:
+      tags:
+        - Logs
+      summary: Поиск логов
+      parameters:
+        - name: userId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: deviceId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: since
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: level
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [INFO, WARN, ERROR]
+      responses:
+        '200':
+          description: Логи
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LogEntry'
+
+  /tickets:
+    post:
+      tags:
+        - Tickets
+      summary: Создать новое обращение
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTicketRequest'
+      responses:
+        '201':
+          description: Обращение создано
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ticket'
+    get:
+      tags:
+        - Tickets
+      summary: Список обращений (с пагинацией и фильтрацией)
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [open, in_progress, resolved, closed]
+        - name: userId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Список обращений
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  content:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Ticket'
+                  totalPages:
+                    type: integer
+
+  /tickets/{ticketId}:
+    get:
+      tags:
+        - Tickets
+      summary: Получить детали обращения
+      parameters:
+        - name: ticketId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Детали обращения
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ticket'
+
+    patch:
+      tags:
+        - Tickets
+      summary: Обновить статус или назначить агента
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTicketRequest'
+      responses:
+        '200':
+          description: Обращение обновлено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ticket'
+
+  /tickets/{ticketId}/messages:
+    post:
+      tags:
+        - Tickets
+      summary: Добавить сообщение в обращение
+      parameters:
+        - name: ticketId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMessageRequest'
+      responses:
+        '201':
+          description: Сообщение добавлено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketMessage'
+
+    get:
+      tags:
+        - Tickets
+      summary: Получить переписку по обращению
+      parameters:
+        - name: ticketId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Список сообщений
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TicketMessage'
+
+  /communications/notify:
+    post:
+      tags:
+        - Communications
+      summary: Отправить уведомление пользователю
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendNotificationRequest'
+      responses:
+        '202':
+          description: Уведомление поставлено в очередь
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+          enum: [active, suspended]
+
+    UserContext:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/UserProfile'
+        devices:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeviceSummary'
+        activeRulesCount:
+          type: integer
+
+    DeviceSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        type:
+          type: string
+        status:
+          type: string
+
+    DeviceStatus:
+      type: object
+      properties:
+        deviceId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [online, offline, error]
+        lastSeen:
+          type: string
+          format: date-time
+        lastCommand:
+          type: string
+          nullable: true
+
+    DeviceEvent:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        eventType:
+          type: string
+        payload:
+          type: object
+
+    LogEntry:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        level:
+          type: string
+        service:
+          type: string
+        message:
+          type: string
+        context:
+          type: object
+
+    Ticket:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        agentId:
+          type: string
+          format: uuid
+          nullable: true
+        subject:
+          type: string
+        status:
+          type: string
+          enum: [open, in_progress, resolved, closed]
+        createdAt:
+          type: string
+          format: date-time
+        resolvedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    TicketMessage:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        senderType:
+          type: string
+          enum: [agent, user]
+        senderId:
+          type: string
+          format: uuid
+        content:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    CreateTicketRequest:
+      type: object
+      required: [userId, subject]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        subject:
+          type: string
+
+    UpdateTicketRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [in_progress, resolved, closed]
+        agentId:
+          type: string
+          format: uuid
+
+    CreateMessageRequest:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+
+    SendNotificationRequest:
+      type: object
+      required: [userId, message]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        message:
+          type: string
+        channel:
+          type: string
+          enum: [email, in_app]
+          default: email

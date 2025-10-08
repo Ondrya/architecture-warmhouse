@@ -1,0 +1,371 @@
+openapi: 3.0.3
+info:
+  title: Device Management API
+  version: 1.0.0
+  description: API для регистрации, управления и диагностики устройств умного дома
+
+servers:
+  - url: https://api.smarthome.example/devices/v1
+
+security:
+  - UserBearerAuth: []
+
+tags:
+  - name: Devices
+    description: Управление устройствами пользователя (регистрация, просмотр, обновление)
+  - name: Commands
+    description: Отправка команд устройствам (вкл/выкл, запереть и т.д.)
+  - name: Capabilities
+    description: Работа с возможностями и совместимостью устройств
+  - name: Diagnostics
+    description: Диагностические данные и статус подключения
+
+paths:
+  /devices:
+    post:
+      tags:
+        - Devices
+      summary: Зарегистрировать новое устройство
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterDeviceRequest'
+      responses:
+        '201':
+          description: Устройство зарегистрировано
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+        '400':
+          description: Некорректные данные или устройство не поддерживается
+        '409':
+          description: Устройство уже зарегистрировано
+
+    get:
+      tags:
+        - Devices
+      summary: Список всех устройств пользователя
+      parameters:
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [thermostat, light, gate, camera, sensor]
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [online, offline, error]
+      responses:
+        '200':
+          description: Список устройств
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DeviceSummary'
+
+  /devices/{deviceId}:
+    get:
+      tags:
+        - Devices
+      summary: Получить детали устройства
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Детали устройства
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+        '404':
+          description: Устройство не найдено
+
+    patch:
+      tags:
+        - Devices
+      summary: Обновить метаданные устройства (например, имя)
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDeviceRequest'
+      responses:
+        '200':
+          description: Устройство обновлено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+
+    delete:
+      tags:
+        - Devices
+      summary: Удалить (отвязать) устройство
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Устройство удалено
+
+  /devices/{deviceId}/command:
+    post:
+      tags:
+        - Commands
+      summary: Отправить команду устройству
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceCommand'
+      responses:
+        '202':
+          description: Команда принята к отправке
+        '400':
+          description: Недопустимая команда для этого типа устройства
+        '409':
+          description: Устройство offline или не отвечает
+
+  /devices/{deviceId}/status:
+    get:
+      tags:
+        - Diagnostics
+      summary: Получить текущий статус подключения устройства
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Статус устройства
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceStatus'
+
+  /capabilities/validate:
+    post:
+      tags:
+        - Capabilities
+      summary: Проверить, поддерживается ли устройство
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceCandidate'
+      responses:
+        '200':
+          description: Устройство поддерживается
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CapabilityValidationResult'
+        '400':
+          description: Устройство не поддерживается
+
+  /capabilities/{deviceId}:
+    get:
+      tags:
+        - Capabilities
+      summary: Получить возможности устройства
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Список возможностей
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DeviceCapability'
+
+components:
+  securitySchemes:
+    UserBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Device:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        partnerDeviceId:
+          type: string
+          description: Идентификатор от производителя
+        name:
+          type: string
+        type:
+          type: string
+          enum: [thermostat, light, gate, camera, sensor]
+        protocol:
+          type: string
+          enum: [mqtt, http, soap]
+        status:
+          type: string
+          enum: [online, offline, error]
+        lastSeen:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+
+    DeviceSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        type:
+          type: string
+        status:
+          type: string
+
+    RegisterDeviceRequest:
+      type: object
+      required: [partnerDeviceId, name, type, protocol]
+      properties:
+        partnerDeviceId:
+          type: string
+          example: "vendor-abc-123"
+        name:
+          type: string
+          example: "Термостат в спальне"
+        type:
+          type: string
+          enum: [thermostat, light, gate, camera, sensor]
+        protocol:
+          type: string
+          enum: [mqtt, http, soap]
+
+    UpdateDeviceRequest:
+      type: object
+      properties:
+        name:
+          type: string
+
+    DeviceCommand:
+      type: object
+      required: [command]
+      properties:
+        command:
+          type: string
+          description: |
+            Допустимые команды зависят от типа:
+            - light: turn_on, turn_off
+            - gate: open, close
+            - thermostat: set_temperature
+            - camera: start_stream, stop_stream
+        params:
+          type: object
+          additionalProperties: true
+          example:
+            temperature: 22
+
+    DeviceStatus:
+      type: object
+      properties:
+        deviceId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [online, offline, error]
+        lastSeen:
+          type: string
+          format: date-time
+        protocol:
+          type: string
+        latencyMs:
+          type: integer
+          nullable: true
+
+    DeviceCandidate:
+      type: object
+      required: [vendorId, model, protocol]
+      properties:
+        vendorId:
+          type: string
+        model:
+          type: string
+        protocol:
+          type: string
+          enum: [mqtt, http, soap]
+
+    CapabilityValidationResult:
+      type: object
+      properties:
+        supported:
+          type: boolean
+        message:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+
+    DeviceCapability:
+      type: object
+      properties:
+        capability:
+          type: string
+          example: "temperature_control"
+        metadata:
+          type: object
+          additionalProperties: true
+          example:
+            min: 10
+            max: 30
+            unit: "°C"

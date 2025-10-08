@@ -1,0 +1,426 @@
+openapi: 3.0.3
+info:
+  title: Automation Engine API
+  version: 1.0.0
+  description: API для управления сценариями автоматизации умного дома
+
+servers:
+  - url: https://api.smarthome.example/automation/v1
+
+security:
+  - UserBearerAuth: []
+
+tags:
+  - name: Rules
+    description: Управление правилами автоматизации (создание, редактирование, активация)
+  - name: Triggers
+    description: Работа с триггерами и условиями
+  - name: Execution
+    description: Просмотр истории срабатываний и ручной запуск
+  - name: Diagnostics
+    description: Диагностика и отладка правил
+
+paths:
+  /rules:
+    post:
+      tags:
+        - Rules
+      summary: Создать новое правило автоматизации
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRuleRequest'
+      responses:
+        '201':
+          description: Правило создано
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AutomationRule'
+        '400':
+          description: Некорректная конфигурация правила
+
+    get:
+      tags:
+        - Rules
+      summary: Список всех правил пользователя
+      parameters:
+        - name: activeOnly
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Список правил
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AutomationRule'
+
+  /rules/{ruleId}:
+    get:
+      tags:
+        - Rules
+      summary: Получить правило по ID
+      parameters:
+        - name: ruleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Правило найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AutomationRule'
+        '404':
+          description: Правило не найдено
+
+    put:
+      tags:
+        - Rules
+      summary: Обновить правило полностью
+      parameters:
+        - name: ruleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRuleRequest'
+      responses:
+        '200':
+          description: Правило обновлено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AutomationRule'
+
+    patch:
+      tags:
+        - Rules
+      summary: Частичное обновление (например, активация/деактивация)
+      parameters:
+        - name: ruleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuleStatusUpdate'
+      responses:
+        '200':
+          description: Статус обновлён
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AutomationRule'
+
+    delete:
+      tags:
+        - Rules
+      summary: Удалить правило
+      parameters:
+        - name: ruleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Правило удалено
+
+  /rules/{ruleId}/execute:
+    post:
+      tags:
+        - Execution
+      summary: Запустить правило вручную (для тестирования)
+      parameters:
+        - name: ruleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManualTriggerContext'
+      responses:
+        '202':
+          description: Запуск инициирован
+        '400':
+          description: Правило неактивно или недействительно
+
+  /rules/{ruleId}/executions:
+    get:
+      tags:
+        - Execution
+      summary: История срабатываний правила
+      parameters:
+        - name: ruleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Список срабатываний
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RuleExecution'
+
+  /triggers/validate:
+    post:
+      tags:
+        - Triggers
+      summary: Проверить корректность конфигурации триггера
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TriggerConfig'
+      responses:
+        '200':
+          description: Триггер валиден
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid:
+                    type: boolean
+                  message:
+                    type: string
+        '400':
+          description: Ошибка валидации
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: "Устройство не поддерживает событие 'motion'"
+
+  /rules/{ruleId}/debug:
+    get:
+      tags:
+        - Diagnostics
+      summary: Получить отладочную информацию по правилу
+      parameters:
+        - name: ruleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Отладочные данные
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuleDebugInfo'
+
+components:
+  securitySchemes:
+    UserBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    AutomationRule:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: "Включать свет при открытии двери"
+        userId:
+          type: string
+          format: uuid
+        trigger:
+          $ref: '#/components/schemas/TriggerConfig'
+        action:
+          $ref: '#/components/schemas/ActionConfig'
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        lastTriggeredAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    TriggerConfig:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [event, schedule, condition]
+        sourceDeviceId:
+          type: string
+          format: uuid
+          description: Для event и condition
+        eventType:
+          type: string
+          description: Например, "door_opened", "motion_detected"
+        cron:
+          type: string
+          description: Для schedule (например, "0 19 * * 1-5")
+        condition:
+          type: string
+          description: Выражение, например "temperature < 18"
+
+    ActionConfig:
+      type: object
+      required: [targetDeviceId, command]
+      properties:
+        targetDeviceId:
+          type: string
+          format: uuid
+        command:
+          type: string
+          description: Например, "turn_on", "lock", "set_temperature"
+        params:
+          type: object
+          additionalProperties: true
+          example:
+            temperature: 22
+
+    CreateRuleRequest:
+      type: object
+      required: [name, trigger, action]
+      properties:
+        name:
+          type: string
+        trigger:
+          $ref: '#/components/schemas/TriggerConfig'
+        action:
+          $ref: '#/components/schemas/ActionConfig'
+        isActive:
+          type: boolean
+          default: true
+
+    UpdateRuleRequest:
+      type: object
+      required: [name, trigger, action, isActive]
+      properties:
+        name:
+          type: string
+        trigger:
+          $ref: '#/components/schemas/TriggerConfig'
+        action:
+          $ref: '#/components/schemas/ActionConfig'
+        isActive:
+          type: boolean
+
+    RuleStatusUpdate:
+      type: object
+      properties:
+        isActive:
+          type: boolean
+
+    ManualTriggerContext:
+      type: object
+      properties:
+        simulatedEvent:
+          type: object
+          properties:
+            deviceId:
+              type: string
+              format: uuid
+            eventType:
+              type: string
+            payload:
+              type: object
+
+    RuleExecution:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        ruleId:
+          type: string
+          format: uuid
+        triggeredAt:
+          type: string
+          format: date-time
+        triggerType:
+          type: string
+        success:
+          type: boolean
+        errorMessage:
+          type: string
+          nullable: true
+        actionResult:
+          type: object
+          nullable: true
+
+    RuleDebugInfo:
+      type: object
+      properties:
+        ruleId:
+          type: string
+          format: uuid
+        isActive:
+          type: boolean
+        lastEvaluatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        subscribedEvents:
+          type: array
+          items:
+            type: string
+        targetDeviceStatus:
+          type: string
+          enum: [online, offline, error]
